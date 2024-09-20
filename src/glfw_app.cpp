@@ -28,10 +28,11 @@ static void OnResizeFrame(GLFWwindow* window, int width, int height)
 	// TODO: implement
 }
 
-Application::Application()
+Application::Application(UINT width, UINT height, std::string name) :
+	_width(width),
+	_height(height),
+	_name(name)
 {
-	const int width = 800, height = 600;
-
 	// initialize glfw
 	bool success = glfwInit();
 	if (!success)
@@ -51,7 +52,7 @@ Application::Application()
 #ifdef FULL_SCREEN
 			// set monitor
 	_monitor = glfwGetPrimaryMonitor();
-	_window = glfwCreateWindow(width, height, "DiaBolic", _monitor, NULL);
+	_window = glfwCreateWindow(_width, _height, _name.c_str(), _monitor, NULL);
 #elif WINDOWED_FULL_SCREEN
 	_monitor = glfwGetPrimaryMonitor();
 	const GLFWvidmode* mode = glfwGetVideoMode(_monitor);
@@ -60,9 +61,9 @@ Application::Application()
 	glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
 	glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
 
-	_window = glfwCreateWindow(mode->width, mode->height, "DiaBolic", _monitor, NULL);
+	_window = glfwCreateWindow(_width, _height, _name.c_str(), _monitor, NULL);
 #else
-	_window = glfwCreateWindow(width, height, "DiaBolic", _monitor, NULL);
+	_window = glfwCreateWindow(_width, _height, _name.c_str(), _monitor, NULL);
 #endif
 
 	if (!_window)
@@ -79,8 +80,7 @@ Application::Application()
 
 	glfwSetTime(0.0);
 
-	// TODO: directx
-	auto mainWindow = glfwGetWin32Window(_window);
+	_hwnd = glfwGetWin32Window(_window);
 }
 
 Application::~Application()
@@ -92,11 +92,6 @@ Application::~Application()
 void Application::Update()
 {
 	glfwPollEvents();
-}
-
-void* Application::GetWindow()
-{
-	return _window;
 }
 
 bool Application::ShouldClose()
