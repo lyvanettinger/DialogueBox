@@ -1,7 +1,4 @@
 #pragma once
-#include "pch.hpp"
-
-#include <memory>
 
 class Renderer;
 

@@ -1,3 +1,5 @@
+#include "pch.hpp"
+
 #include "glfw_app.hpp"
 
 #include <stdlib.h>

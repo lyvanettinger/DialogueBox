@@ -1,5 +1,4 @@
 #pragma once
-#include "pch.hpp"
 
 class Application;
 
@@ -39,8 +38,8 @@ private:
     UINT _rtvDescriptorSize;
 
     // App resources.
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
+    Microsoft::WRL::ComPtr<ID3D12Resource> _vertexBuffer;
+    D3D12_VERTEX_BUFFER_VIEW _vertexBufferView;
 
     // Synchronization objects
     UINT _frameIndex;

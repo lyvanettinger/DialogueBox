@@ -11,7 +11,7 @@
 
 #include "d3dx12.h"
 
-#define D3DCOMPILE_DEBUG 1
+//#define D3DCOMPILE_DEBUG 1
 
 // GLFW
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -27,3 +27,5 @@
 
 // program specific
 #define FRAME_COUNT 2
+
+#include "dx12_helpers.hpp"

@@ -1,4 +1,4 @@
-#include "include/pch.hpp"
+#include "pch.hpp"
 
 #include "glfw_app.hpp"
 #include "renderer.hpp"
@@ -14,7 +14,7 @@ int main(int argc, char** argv)
 {
 	// TODO: input parameters for application window
 	g_app = std::make_shared<Application>(800, 600, "DiaBolic");
-	g_renderer = std::make_shared<Renderer>(g_app->GetWindow());
+	g_renderer = std::make_shared<Renderer>(g_app);
 	g_sample = std::make_unique<DialogueSample>(g_renderer);
 
 	while (!g_app->ShouldClose())

@@ -1,15 +1,21 @@
-struct PSInput
+struct VSInput
 {
-    float4 position : SV_POSITION;
     float4 color : COLOR;
+    float3 position : POSITION;
 };
 
-PSInput VSMain(float4 position : POSITION, float4 color : COLOR) : SV_TARGET
+struct VSOutput
 {
-    PSInput result;
+    float4 color : COLOR;
+    float4 position : SV_POSITION;
+};
 
-    result.position = position;
-    result.color = color;
+VSOutput main(VSInput input)
+{
+    VSOutput result;
+
+    result.position = float4(input.position, 1.0f);
+    result.color = input.color;
 
     return result;
 }
