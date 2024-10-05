@@ -9,9 +9,10 @@
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
 
+#pragma warning(push)
+#pragma warning(disable : 4324)
 #include "d3dx12.h"
-
-//#define D3DCOMPILE_DEBUG 1
+#pragma warning(pop)
 
 // GLFW
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -27,5 +28,3 @@
 
 // program specific
 #define FRAME_COUNT 2
-
-#include "dx12_helpers.hpp"

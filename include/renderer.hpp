@@ -1,6 +1,8 @@
 #pragma once
 
 class Application;
+class GeometryPipeline;
+class UIPipeline;
 
 class Renderer
 {
@@ -12,16 +14,12 @@ public:
 
 private:
     std::shared_ptr<Application> _app;
+    std::unique_ptr<GeometryPipeline> _geometryPipeline;
+    std::unique_ptr<UIPipeline> _uiPipeline;
 
     UINT _width;
     UINT _height;
     float _aspectRatio;
-
-    struct Vertex
-    {
-        DirectX::XMFLOAT3 position;
-        DirectX::XMFLOAT4 color;
-    };
 
     // Pipeline objects
     CD3DX12_VIEWPORT _viewport;
@@ -31,15 +29,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> _renderTargets[FRAME_COUNT];
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _commandAllocator;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> _commandQueue;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> _rootSignature;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtvHeap;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipelineState;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _commandList;
     UINT _rtvDescriptorSize;
-
-    // App resources.
-    Microsoft::WRL::ComPtr<ID3D12Resource> _vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW _vertexBufferView;
 
     // Synchronization objects
     UINT _frameIndex;
@@ -51,6 +42,8 @@ private:
 
     void LoadPipeline();
     void LoadAssets();
-    void PopulateCommandList();
     void WaitForPreviousFrame();
+
+    // friend classes
+    friend class GeometryPipeline;
 };

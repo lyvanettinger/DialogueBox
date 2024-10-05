@@ -23,6 +23,8 @@
     <ClCompile Include="src\dialogue_sample.cpp" />
     <ClCompile Include="src\glfw_app.cpp" />
     <ClCompile Include="src\renderer.cpp" />
+    <ClCompile Include="src\pipelines\geometry_pipeline.cpp" />
+    <ClCompile Include="src\pipelines\ui_pipeline.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\d3dx12.h" />
@@ -31,6 +33,8 @@
     <ClInclude Include="include\glfw_app.hpp" />
     <ClInclude Include="include\pch.hpp" />
     <ClInclude Include="Include\renderer.hpp" />
+    <ClInclude Include="include\pipelines\geometry_pipeline.hpp" />
+    <ClInclude Include="include\pipelines\ui_pipeline.hpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="assets\shaders\uber_ps.hlsl">
@@ -136,7 +140,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
@@ -149,11 +153,12 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);d3d12.lib;dxgi.lib;D3DCompiler.lib;glfw3.lib</AdditionalDependencies>
+      <AdditionalOptions>/NODEFAULTLIB:MSVCRT %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
@@ -170,6 +175,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);d3d12.lib;dxgi.lib;D3DCompiler.lib;glfw3.lib</AdditionalDependencies>
+      <AdditionalOptions>/NODEFAULTLIB:MSVCRT %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

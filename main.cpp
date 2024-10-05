@@ -10,7 +10,7 @@ std::shared_ptr<Application> g_app;
 std::shared_ptr<Renderer> g_renderer;
 std::unique_ptr<DialogueSample> g_sample;
 
-int main(int argc, char** argv)
+int main()
 {
 	// TODO: input parameters for application window
 	g_app = std::make_shared<Application>(800, 600, "DiaBolic");
