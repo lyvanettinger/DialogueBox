@@ -8,7 +8,7 @@
 UIPipeline::UIPipeline(Renderer& renderer) :
 	_renderer(renderer)
 {
-
+	CreatePipeline();
 }
 
 UIPipeline::~UIPipeline()
@@ -21,7 +21,7 @@ ID3D12CommandList* UIPipeline::PopulateCommandlist()
 	return _commandList.Get();
 }
 
-void UIPipeline::LoadAssets()
+void UIPipeline::CreatePipeline()
 {
 
 }

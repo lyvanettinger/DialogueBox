@@ -8,8 +8,6 @@ public:
 	UIPipeline(Renderer& renderer);
 	~UIPipeline();
 
-	void LoadAssets();
-
 	ID3D12CommandList* PopulateCommandlist();
 private:
 	Renderer& _renderer;
@@ -17,4 +15,6 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> _rootSignature;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipelineState;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _commandList;
+
+	void CreatePipeline();
 };

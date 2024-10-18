@@ -3,6 +3,7 @@
 class Application;
 class GeometryPipeline;
 class UIPipeline;
+struct Camera;
 
 class Renderer
 {
@@ -10,10 +11,14 @@ public:
 	Renderer(std::shared_ptr<Application> app);
 	~Renderer();
 
-	void Render();
+	void Render(float deltaTime);
+
+    void ResizeWindow(UINT width, UINT height);
 
 private:
     std::shared_ptr<Application> _app;
+    std::shared_ptr<Camera> _camera;
+
     std::unique_ptr<GeometryPipeline> _geometryPipeline;
     std::unique_ptr<UIPipeline> _uiPipeline;
 
@@ -21,15 +26,21 @@ private:
     UINT _height;
     float _aspectRatio;
 
-    // Pipeline objects
     CD3DX12_VIEWPORT _viewport;
     CD3DX12_RECT _scissorRect;
+
     Microsoft::WRL::ComPtr<IDXGISwapChain3> _swapChain;
-    Microsoft::WRL::ComPtr<ID3D12Device> _device;
+    Microsoft::WRL::ComPtr<ID3D12Device2> _device;
+
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _directCommandAllocator;
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> _directCommandQueue;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _copyCommandAllocator;
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> _copyCommandQueue;
+
     Microsoft::WRL::ComPtr<ID3D12Resource> _renderTargets[FRAME_COUNT];
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _commandAllocator;
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> _commandQueue;
+    Microsoft::WRL::ComPtr<ID3D12Resource> _depthBuffer;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _dsvHeap;
     UINT _rtvDescriptorSize;
 
     // Synchronization objects
@@ -40,9 +51,10 @@ private:
 
     bool _useWarpDevice;
 
-    void LoadPipeline();
-    void LoadAssets();
+    void InitializeResources();
     void WaitForPreviousFrame();
+
+    void ResizeDepthBuffer();
 
     // friend classes
     friend class GeometryPipeline;

@@ -11,76 +11,11 @@
 #include "dx12_helpers.hpp"
 #include "glfw_app.hpp"
 
+#include "camera.hpp"
+
 #include "pipelines/geometry_pipeline.hpp"
 #include "pipelines/ui_pipeline.hpp"
 
-// TODO: possibly move this to Application. At least remove from global
-// Helper function for acquiring the first available hardware adapter that supports Direct3D 12.
-// If no such adapter can be found, *ppAdapter will be set to nullptr.
-void GetHardwareAdapter(
-    IDXGIFactory1* pFactory,
-    IDXGIAdapter1** ppAdapter,
-    bool requestHighPerformanceAdapter)
-{
-    *ppAdapter = nullptr;
-
-    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-
-    Microsoft::WRL::ComPtr<IDXGIFactory6> factory6;
-    if (SUCCEEDED(pFactory->QueryInterface(IID_PPV_ARGS(&factory6))))
-    {
-        for (
-            UINT adapterIndex = 0;
-            SUCCEEDED(factory6->EnumAdapterByGpuPreference(
-                adapterIndex,
-                requestHighPerformanceAdapter == true ? DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE : DXGI_GPU_PREFERENCE_UNSPECIFIED,
-                IID_PPV_ARGS(&adapter)));
-                ++adapterIndex)
-        {
-            DXGI_ADAPTER_DESC1 desc;
-            adapter->GetDesc1(&desc);
-
-            if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
-            {
-                // Don't select the Basic Render Driver adapter.
-                // If you want a software adapter, pass in "/warp" on the command line.
-                continue;
-            }
-
-            // Check to see whether the adapter supports Direct3D 12, but don't create the
-            // actual device yet.
-            if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
-            {
-                break;
-            }
-        }
-    }
-
-    if (adapter.Get() == nullptr)
-    {
-        for (UINT adapterIndex = 0; SUCCEEDED(pFactory->EnumAdapters1(adapterIndex, &adapter)); ++adapterIndex)
-        {
-            DXGI_ADAPTER_DESC1 desc;
-            adapter->GetDesc1(&desc);
-
-            if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
-            {
-                // Don't select the Basic Render Driver adapter.
-                // If you want a software adapter, pass in "/warp" on the command line.
-                continue;
-            }
-
-            // Check to see whether the adapter supports Direct3D 12, but don't create the
-            // actual device yet.
-            if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
-            {
-                break;
-            }
-        }
-    }
-
-    *ppAdapter = adapter.Detach();
-}
 
 Renderer::Renderer(std::shared_ptr<Application> app) :
 	_app(app),
@@ -93,12 +28,12 @@ Renderer::Renderer(std::shared_ptr<Application> app) :
     _useWarpDevice(false)
 {
     _aspectRatio = static_cast<float>(_width) / static_cast<float>(_height);
+    _camera = std::make_shared<Camera>();
 
-    _geometryPipeline = std::make_unique<GeometryPipeline>(*this);
+    InitializeResources();
+
+    _geometryPipeline = std::make_unique<GeometryPipeline>(*this, _camera);
     _uiPipeline = std::make_unique<UIPipeline>(*this);
-
-    LoadPipeline();
-    LoadAssets();
 }
 
 Renderer::~Renderer()
@@ -110,7 +45,75 @@ Renderer::~Renderer()
     CloseHandle(_fenceEvent);
 }
 
-void Renderer::LoadPipeline()
+void Renderer::Render(float deltaTime)
+{
+    // Command list allocators can only be reset when the associated 
+    // command lists have finished execution on the GPU; apps should use 
+    // fences to determine GPU execution progress.
+    Util::ThrowIfFailed(_directCommandAllocator->Reset());
+
+    _geometryPipeline->Update(deltaTime);
+
+    // Execute the command list.
+    ID3D12CommandList* ppCommandLists[] = {
+        _geometryPipeline->PopulateCommandlist()
+    };
+    _directCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+    // Present the frame.
+    Util::ThrowIfFailed(_swapChain->Present(1, 0));
+
+    WaitForPreviousFrame();
+}
+
+void Renderer::ResizeWindow(UINT width, UINT height)
+{
+    if (_width != width || _height != height)
+    {
+        _width = max(width, 1);
+        _height = max(height, 1);
+        _aspectRatio = static_cast<float>(_width) / static_cast<float>(_height);
+
+        _viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<FLOAT>(_width), static_cast<FLOAT>(_height));
+
+        ResizeDepthBuffer();
+    }
+}
+
+void Renderer::ResizeDepthBuffer()
+{
+    // Flush all queues
+    WaitForPreviousFrame(); // TODO: also wait for copy queue. probably need to make command queue wrapper
+
+    // Create DSV
+    D3D12_CLEAR_VALUE optimizedClearValue = {};
+    optimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    optimizedClearValue.DepthStencil = { 1.0f, 0 };
+
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+    CD3DX12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, _width, _height,
+        1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+    Util::ThrowIfFailed(_device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &optimizedClearValue,
+        IID_PPV_ARGS(&_depthBuffer)
+    ));
+
+    // Update the depth-stencil view.
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsv = {};
+    dsv.Format = DXGI_FORMAT_D32_FLOAT;
+    dsv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsv.Texture2D.MipSlice = 0;
+    dsv.Flags = D3D12_DSV_FLAG_NONE;
+
+    _device->CreateDepthStencilView(_depthBuffer.Get(), &dsv,
+        _dsvHeap->GetCPUDescriptorHandleForHeapStart());
+}
+
+void Renderer::InitializeResources()
 {
     UINT dxgiFactoryFlags = 0;
 
@@ -135,14 +138,14 @@ void Renderer::LoadPipeline()
     // command lists, command queues, fences, heaps, etc…). It's not directly used for issuing draw or dispatch commands.
     // It can be considered a memory context that tracks allocations in GPU memory.
     Microsoft::WRL::ComPtr<IDXGIFactory4> factory;
-    ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&factory)));
+    Util::ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&factory)));
 
     if (_useWarpDevice)
     {
         Microsoft::WRL::ComPtr<IDXGIAdapter> warpAdapter;
-        ThrowIfFailed(factory->EnumWarpAdapter(IID_PPV_ARGS(&warpAdapter)));
+        Util::ThrowIfFailed(factory->EnumWarpAdapter(IID_PPV_ARGS(&warpAdapter)));
 
-        ThrowIfFailed(D3D12CreateDevice(
+        Util::ThrowIfFailed(D3D12CreateDevice(
             warpAdapter.Get(),
             D3D_FEATURE_LEVEL_11_0,
             IID_PPV_ARGS(&_device)
@@ -151,22 +154,28 @@ void Renderer::LoadPipeline()
     else
     {
         Microsoft::WRL::ComPtr<IDXGIAdapter1> hardwareAdapter;
-        GetHardwareAdapter(factory.Get(), &hardwareAdapter, false); // bool: request for high performance adapter or not?
+        Util::GetHardwareAdapter(factory.Get(), &hardwareAdapter, false); // bool: request for high performance adapter or not?
 
-        ThrowIfFailed(D3D12CreateDevice(
+        Util::ThrowIfFailed(D3D12CreateDevice(
             hardwareAdapter.Get(),
             D3D_FEATURE_LEVEL_11_0,
             IID_PPV_ARGS(&_device)
         ));
     }
 
-    // Describe and create the command queue.
+    // Describe and create the command queues.
     // https://www.3dgep.com/learning-directx-12-1/#Command_Queue
-    D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-    queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    D3D12_COMMAND_QUEUE_DESC directQueueDesc = {};
+    directQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    directQueueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+    directQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    Util::ThrowIfFailed(_device->CreateCommandQueue(&directQueueDesc, IID_PPV_ARGS(&_directCommandQueue)));
 
-    ThrowIfFailed(_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&_commandQueue)));
+    D3D12_COMMAND_QUEUE_DESC copyQueueDesc = {};
+    copyQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    copyQueueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+    copyQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_COPY;
+    Util::ThrowIfFailed(_device->CreateCommandQueue(&copyQueueDesc, IID_PPV_ARGS(&_copyCommandQueue)));
 
     // Describe and create the swap chain.
     // https://www.3dgep.com/learning-directx-12-1/#Create_the_Swap_Chain
@@ -183,8 +192,8 @@ void Renderer::LoadPipeline()
     swapChainDesc.SampleDesc.Count = 1;
 
     Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
-    ThrowIfFailed(factory->CreateSwapChainForHwnd(
-        _commandQueue.Get(),        // Swap chain needs the queue so that it can force a flush on it.
+    Util::ThrowIfFailed(factory->CreateSwapChainForHwnd(
+        _directCommandQueue.Get(),        // Swap chain needs the queue so that it can force a flush on it.
         _app->GetHWND(),
         &swapChainDesc,
         nullptr,
@@ -193,9 +202,9 @@ void Renderer::LoadPipeline()
     ));
 
     // This sample does not support fullscreen transitions.
-    ThrowIfFailed(factory->MakeWindowAssociation(_app->GetHWND(), DXGI_MWA_NO_ALT_ENTER));
+    Util::ThrowIfFailed(factory->MakeWindowAssociation(_app->GetHWND(), DXGI_MWA_NO_ALT_ENTER));
 
-    ThrowIfFailed(swapChain.As(&_swapChain));
+    Util::ThrowIfFailed(swapChain.As(&_swapChain));
     _frameIndex = _swapChain->GetCurrentBackBufferIndex();
 
     // Create descriptor heaps.
@@ -211,9 +220,16 @@ void Renderer::LoadPipeline()
         rtvHeapDesc.NumDescriptors = FRAME_COUNT;
         rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        ThrowIfFailed(_device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&_rtvHeap)));
+        Util::ThrowIfFailed(_device->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&_rtvHeap)));
 
         _rtvDescriptorSize = _device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+        // Create the descriptor heap for the depth-stencil view (DSV).
+        D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+        dsvHeapDesc.NumDescriptors = 1;
+        dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        Util::ThrowIfFailed(_device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&_dsvHeap)));
     }
 
     // Create frame resources.
@@ -223,56 +239,36 @@ void Renderer::LoadPipeline()
         // Create a RTV for each frame.
         for (UINT n = 0; n < FRAME_COUNT; n++)
         {
-            ThrowIfFailed(_swapChain->GetBuffer(n, IID_PPV_ARGS(&_renderTargets[n])));
+            Util::ThrowIfFailed(_swapChain->GetBuffer(n, IID_PPV_ARGS(&_renderTargets[n])));
             _device->CreateRenderTargetView(_renderTargets[n].Get(), nullptr, rtvHandle);
             rtvHandle.Offset(1, _rtvDescriptorSize);
+
         }
     }
 
-    ThrowIfFailed(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_commandAllocator)));
-}
-
-void Renderer::LoadAssets()
-{
-    _geometryPipeline->LoadAssets();
-    _uiPipeline->LoadAssets();
+    // Create command allocators
+    Util::ThrowIfFailed(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_directCommandAllocator)));
+    Util::ThrowIfFailed(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COPY, IID_PPV_ARGS(&_copyCommandAllocator)));
 
     // Create synchronization objects and wait until assets have been uploaded to the GPU.
     {
-        ThrowIfFailed(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)));
+        Util::ThrowIfFailed(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)));
         _fenceValue = 1;
 
         // Create an event handle to use for frame synchronization.
         _fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         if (_fenceEvent == nullptr)
         {
-            ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+            Util::ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
         }
 
         // Wait for the command list to execute; we are reusing the same command 
         // list in our main loop but for now, we just want to wait for setup to 
         // complete before continuing.
-        WaitForPreviousFrame();
+
+        // Create a DSV.
+        ResizeDepthBuffer();
     }
-}
-
-void Renderer::Render()
-{
-    // Command list allocators can only be reset when the associated 
-    // command lists have finished execution on the GPU; apps should use 
-    // fences to determine GPU execution progress.
-    ThrowIfFailed(_commandAllocator->Reset());
-
-    // Execute the command list.
-    ID3D12CommandList* ppCommandLists[] = { 
-        _geometryPipeline->PopulateCommandlist() 
-    };
-    _commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-    // Present the frame.
-    ThrowIfFailed(_swapChain->Present(1, 0));
-
-    WaitForPreviousFrame();
 }
 
 void Renderer::WaitForPreviousFrame()
@@ -284,13 +280,13 @@ void Renderer::WaitForPreviousFrame()
 
     // Signal and increment the fence value.
     const UINT64 fence = _fenceValue;
-    ThrowIfFailed(_commandQueue->Signal(_fence.Get(), fence));
+    Util::ThrowIfFailed(_directCommandQueue->Signal(_fence.Get(), fence));
     _fenceValue++;
 
     // Wait until the previous frame is finished.
     if (_fence->GetCompletedValue() < fence)
     {
-        ThrowIfFailed(_fence->SetEventOnCompletion(fence, _fenceEvent));
+        Util::ThrowIfFailed(_fence->SetEventOnCompletion(fence, _fenceEvent));
         WaitForSingleObject(_fenceEvent, INFINITE);
     }
 

@@ -1,3 +1,8 @@
+struct ModelViewProjection
+{
+    matrix MVP;
+};
+
 struct VSInput
 {
     float4 color : COLOR;

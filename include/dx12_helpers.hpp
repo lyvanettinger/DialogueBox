@@ -1,9 +1,14 @@
 #pragma once
 
-inline void ThrowIfFailed(HRESULT hr)
+namespace Util
 {
-    if (FAILED(hr))
+    void GetHardwareAdapter(IDXGIFactory1* pFactory, IDXGIAdapter1** ppAdapter, bool requestHighPerformanceAdapter);
+
+    inline void ThrowIfFailed(HRESULT hr)
     {
-        throw std::exception();
+        if (FAILED(hr))
+        {
+            throw std::exception();
+        }
     }
 }
