@@ -3,6 +3,7 @@
 class Application;
 class GeometryPipeline;
 class UIPipeline;
+class CommandQueue;
 struct Camera;
 
 class Renderer
@@ -11,9 +12,12 @@ public:
 	Renderer(std::shared_ptr<Application> app);
 	~Renderer();
 
+    void Update(float deltaTime);
 	void Render(float deltaTime);
 
     void ResizeWindow(UINT width, UINT height);
+
+    void Flush();
 
 private:
     std::shared_ptr<Application> _app;
@@ -32,10 +36,8 @@ private:
     Microsoft::WRL::ComPtr<IDXGISwapChain3> _swapChain;
     Microsoft::WRL::ComPtr<ID3D12Device2> _device;
 
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _directCommandAllocator;
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> _directCommandQueue;
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> _copyCommandAllocator;
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> _copyCommandQueue;
+    std::unique_ptr<CommandQueue> _directCommandQueue;
+    std::unique_ptr<CommandQueue> _copyCommandQueue;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> _renderTargets[FRAME_COUNT];
     Microsoft::WRL::ComPtr<ID3D12Resource> _depthBuffer;
@@ -43,17 +45,10 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _dsvHeap;
     UINT _rtvDescriptorSize;
 
-    // Synchronization objects
     UINT _frameIndex;
-    Microsoft::WRL::ComPtr<ID3D12Fence> _fence;
-    HANDLE _fenceEvent;
-    UINT64 _fenceValue;
-
     bool _useWarpDevice;
 
-    void InitializeResources();
-    void WaitForPreviousFrame();
-
+    void InitializeGraphics();
     void ResizeDepthBuffer();
 
     // friend classes

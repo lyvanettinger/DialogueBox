@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="src\camera.cpp" />
+    <ClCompile Include="src\command_queue.cpp" />
     <ClCompile Include="src\dialogue_sample.cpp" />
     <ClCompile Include="src\dx12_helpers.cpp" />
     <ClCompile Include="src\glfw_app.cpp" />
@@ -31,6 +32,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\camera.hpp" />
+    <ClInclude Include="include\command_queue.hpp" />
     <ClInclude Include="include\d3dx12.h" />
     <ClInclude Include="include\dialogue_sample.hpp" />
     <ClInclude Include="include\dx12_helpers.hpp" />

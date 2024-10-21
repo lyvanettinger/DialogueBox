@@ -10,6 +10,7 @@
 
 #include "dx12_helpers.hpp"
 #include "glfw_app.hpp"
+#include "command_queue.hpp"
 
 #include "camera.hpp"
 
@@ -21,7 +22,6 @@ Renderer::Renderer(std::shared_ptr<Application> app) :
 	_app(app),
     _width(_app->GetWidth()),
     _height(_app->GetHeight()),
-	_frameIndex(0),
 	_viewport(0.0f, 0.0f, static_cast<float>(_width), static_cast<float>(_height)),
 	_scissorRect(0, 0, static_cast<LONG>(_width), static_cast<LONG>(_height)),
 	_rtvDescriptorSize(0),
@@ -30,40 +30,33 @@ Renderer::Renderer(std::shared_ptr<Application> app) :
     _aspectRatio = static_cast<float>(_width) / static_cast<float>(_height);
     _camera = std::make_shared<Camera>();
 
-    InitializeResources();
+    InitializeGraphics();
 
+    // Create pipelines
     _geometryPipeline = std::make_unique<GeometryPipeline>(*this, _camera);
     _uiPipeline = std::make_unique<UIPipeline>(*this);
+
+    ResizeDepthBuffer();
 }
 
 Renderer::~Renderer()
 {
     // Ensure that the GPU is no longer referencing resources that are about to be
     // cleaned up by the destructor.
-    WaitForPreviousFrame();
+    Flush();
+}
 
-    CloseHandle(_fenceEvent);
+void Renderer::Update(float deltaTime)
+{
+    _geometryPipeline->Update(deltaTime);
 }
 
 void Renderer::Render(float deltaTime)
 {
-    // Command list allocators can only be reset when the associated 
-    // command lists have finished execution on the GPU; apps should use 
-    // fences to determine GPU execution progress.
-    Util::ThrowIfFailed(_directCommandAllocator->Reset());
-
-    _geometryPipeline->Update(deltaTime);
-
-    // Execute the command list.
-    ID3D12CommandList* ppCommandLists[] = {
-        _geometryPipeline->PopulateCommandlist()
-    };
-    _directCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+    _geometryPipeline->PopulateCommandlist();
 
     // Present the frame.
     Util::ThrowIfFailed(_swapChain->Present(1, 0));
-
-    WaitForPreviousFrame();
 }
 
 void Renderer::ResizeWindow(UINT width, UINT height)
@@ -82,8 +75,7 @@ void Renderer::ResizeWindow(UINT width, UINT height)
 
 void Renderer::ResizeDepthBuffer()
 {
-    // Flush all queues
-    WaitForPreviousFrame(); // TODO: also wait for copy queue. probably need to make command queue wrapper
+    Flush();
 
     // Create DSV
     D3D12_CLEAR_VALUE optimizedClearValue = {};
@@ -113,7 +105,13 @@ void Renderer::ResizeDepthBuffer()
         _dsvHeap->GetCPUDescriptorHandleForHeapStart());
 }
 
-void Renderer::InitializeResources()
+void Renderer::Flush()
+{
+    _directCommandQueue->Flush();
+    _copyCommandQueue->Flush();
+}
+
+void Renderer::InitializeGraphics()
 {
     UINT dxgiFactoryFlags = 0;
 
@@ -163,19 +161,9 @@ void Renderer::InitializeResources()
         ));
     }
 
-    // Describe and create the command queues.
-    // https://www.3dgep.com/learning-directx-12-1/#Command_Queue
-    D3D12_COMMAND_QUEUE_DESC directQueueDesc = {};
-    directQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    directQueueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-    directQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-    Util::ThrowIfFailed(_device->CreateCommandQueue(&directQueueDesc, IID_PPV_ARGS(&_directCommandQueue)));
-
-    D3D12_COMMAND_QUEUE_DESC copyQueueDesc = {};
-    copyQueueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-    copyQueueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
-    copyQueueDesc.Type = D3D12_COMMAND_LIST_TYPE_COPY;
-    Util::ThrowIfFailed(_device->CreateCommandQueue(&copyQueueDesc, IID_PPV_ARGS(&_copyCommandQueue)));
+    // Create command queues
+    _directCommandQueue = std::make_unique<CommandQueue>(_device, D3D12_COMMAND_LIST_TYPE_DIRECT);
+    _copyCommandQueue = std::make_unique<CommandQueue>(_device, D3D12_COMMAND_LIST_TYPE_COPY);
 
     // Describe and create the swap chain.
     // https://www.3dgep.com/learning-directx-12-1/#Create_the_Swap_Chain
@@ -193,7 +181,7 @@ void Renderer::InitializeResources()
 
     Microsoft::WRL::ComPtr<IDXGISwapChain1> swapChain;
     Util::ThrowIfFailed(factory->CreateSwapChainForHwnd(
-        _directCommandQueue.Get(),        // Swap chain needs the queue so that it can force a flush on it.
+        _directCommandQueue->GetCommandQueue().Get(),        // Swap chain needs the queue so that it can force a flush on it.
         _app->GetHWND(),
         &swapChainDesc,
         nullptr,
@@ -245,50 +233,4 @@ void Renderer::InitializeResources()
 
         }
     }
-
-    // Create command allocators
-    Util::ThrowIfFailed(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&_directCommandAllocator)));
-    Util::ThrowIfFailed(_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COPY, IID_PPV_ARGS(&_copyCommandAllocator)));
-
-    // Create synchronization objects and wait until assets have been uploaded to the GPU.
-    {
-        Util::ThrowIfFailed(_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&_fence)));
-        _fenceValue = 1;
-
-        // Create an event handle to use for frame synchronization.
-        _fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-        if (_fenceEvent == nullptr)
-        {
-            Util::ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
-        }
-
-        // Wait for the command list to execute; we are reusing the same command 
-        // list in our main loop but for now, we just want to wait for setup to 
-        // complete before continuing.
-
-        // Create a DSV.
-        ResizeDepthBuffer();
-    }
-}
-
-void Renderer::WaitForPreviousFrame()
-{
-    // WAITING FOR THE FRAME TO COMPLETE BEFORE CONTINUING IS NOT BEST PRACTICE.
-    // This is code implemented as such for simplicity. The D3D12HelloFrameBuffering
-    // sample illustrates how to use fences for efficient resource usage and to
-    // maximize GPU utilization.
-
-    // Signal and increment the fence value.
-    const UINT64 fence = _fenceValue;
-    Util::ThrowIfFailed(_directCommandQueue->Signal(_fence.Get(), fence));
-    _fenceValue++;
-
-    // Wait until the previous frame is finished.
-    if (_fence->GetCompletedValue() < fence)
-    {
-        Util::ThrowIfFailed(_fence->SetEventOnCompletion(fence, _fenceEvent));
-        WaitForSingleObject(_fenceEvent, INFINITE);
-    }
-
-    _frameIndex = _swapChain->GetCurrentBackBufferIndex();
 }

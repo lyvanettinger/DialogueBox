@@ -4,6 +4,7 @@
 
 #include "dx12_helpers.hpp"
 #include "resource_util.hpp"
+#include "command_queue.hpp"
 
 #include "renderer.hpp"
 #include "camera.hpp"
@@ -51,50 +52,47 @@ GeometryPipeline::~GeometryPipeline()
 
 }
 
-ID3D12CommandList* GeometryPipeline::PopulateCommandlist()
+void GeometryPipeline::PopulateCommandlist()
 {
-    // However, when ExecuteCommandList() is called on a particular command 
-    // list, that command list can then be reset at any time and must be before 
-    // re-recording.
-    ThrowIfFailed(_commandList->Reset(_renderer._directCommandAllocator.Get(), _pipelineState.Get()));
+    auto commandList = _renderer._directCommandQueue->GetCommandList();
 
     // Set necessary state.
-    _commandList->SetGraphicsRootSignature(_rootSignature.Get());
-    _commandList->RSSetViewports(1, &_renderer._viewport);
-    _commandList->RSSetScissorRects(1, &_renderer._scissorRect);
+    commandList->SetGraphicsRootSignature(_rootSignature.Get());
+    commandList->RSSetViewports(1, &_renderer._viewport);
+    commandList->RSSetScissorRects(1, &_renderer._scissorRect);
 
     // Indicate that the back buffer will be used as a render target.
     auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_renderer._renderTargets[_renderer._frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    _commandList->ResourceBarrier(1, &barrier);
+    commandList->ResourceBarrier(1, &barrier);
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(_renderer._rtvHeap->GetCPUDescriptorHandleForHeapStart(), _renderer._frameIndex, _renderer._rtvDescriptorSize);
     auto dsvHandle = _renderer._dsvHeap->GetCPUDescriptorHandleForHeapStart();
-    _commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+    commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
 
     // Clear RTV and DSV
     // TODO: this should be moved to renderer
     const float clearColor[] = { 255.0f / 255.0f, 182.0f / 255.0f, 193.0f / 255.0f, 1.0f }; // pink :)
-    _commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-    _commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     // Start recording
-    _commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    _commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
-    _commandList->IASetIndexBuffer(&_IndexBufferView);
-    _commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
+    commandList->IASetIndexBuffer(&_IndexBufferView);
+    commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
 
     // Indicate that the back buffer will now be used to present.
     barrier = CD3DX12_RESOURCE_BARRIER::Transition(_renderer._renderTargets[_renderer._frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-    _commandList->ResourceBarrier(1, &barrier);
+    commandList->ResourceBarrier(1, &barrier);
 
-    ThrowIfFailed(_commandList->Close());
-
-    return _commandList.Get();
+    uint64_t fenceValue = _renderer._directCommandQueue->ExecuteCommandList(commandList);
+    _renderer._directCommandQueue->WaitForFenceValue(fenceValue);
 }
 
 void GeometryPipeline::Update(float deltaTime)
 {
     static double totalTime = 0.0f;
+    totalTime += deltaTime;
     if (totalTime > 1.0f)
     {
         totalTime = 0.0f;
@@ -187,23 +185,15 @@ void GeometryPipeline::CreatePipeline()
         sizeof(PipelineStateStream), &pipelineStateStream
     };
     ThrowIfFailed(_renderer._device->CreatePipelineState(&pipelineStateStreamDesc, IID_PPV_ARGS(&_pipelineState)));
-
-    // Create the command list.
-    ThrowIfFailed(_renderer._device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, _renderer._directCommandAllocator.Get(), _pipelineState.Get(), IID_PPV_ARGS(&_commandList)));
-
-    // Command lists are created in the recording state, but there is nothing
-    // to record yet. The main loop expects it to be closed, so close it now.
-    ThrowIfFailed(_commandList->Close());
 }
 
 void GeometryPipeline::InitializeAssets()
 {
-    ComPtr<ID3D12GraphicsCommandList> copyCommandList;
-    ThrowIfFailed(_renderer._device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COPY, _renderer._copyCommandAllocator.Get(), _pipelineState.Get(), IID_PPV_ARGS(&copyCommandList)));
-
+    auto commandList = _renderer._copyCommandQueue->GetCommandList();
+    
     // Create the vertex buffer.
     ComPtr<ID3D12Resource> intermediateVertexBuffer;
-    LoadBufferResource(_renderer._device, copyCommandList,
+    LoadBufferResource(_renderer._device, commandList,
         &_vertexBuffer, &intermediateVertexBuffer,
         _countof(cubeVertices), sizeof(Vertex), cubeVertices);
 
@@ -213,7 +203,7 @@ void GeometryPipeline::InitializeAssets()
 
     // Create the index buffer.
     ComPtr<ID3D12Resource> intermediateIndexBuffer;
-    LoadBufferResource(_renderer._device, copyCommandList,
+    LoadBufferResource(_renderer._device, commandList,
         &_IndexBuffer, &intermediateIndexBuffer,
         _countof(cubeIndices), sizeof(WORD), cubeIndices);
 
@@ -221,9 +211,6 @@ void GeometryPipeline::InitializeAssets()
     _IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
     _IndexBufferView.SizeInBytes = sizeof(cubeIndices);
 
-    ThrowIfFailed(copyCommandList->Close());
-    ID3D12CommandList* const ppCopyCommandList[] = {
-        copyCommandList.Get()
-    };
-    _renderer._copyCommandQueue->ExecuteCommandLists(1, ppCopyCommandList); // TODO: This should probably be done by the renderer
+    uint64_t fenceValue = _renderer._copyCommandQueue->ExecuteCommandList(commandList);
+    _renderer._copyCommandQueue->WaitForFenceValue(fenceValue);
 }

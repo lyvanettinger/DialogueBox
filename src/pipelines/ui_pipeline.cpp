@@ -16,9 +16,9 @@ UIPipeline::~UIPipeline()
 
 }
 
-ID3D12CommandList* UIPipeline::PopulateCommandlist()
+void UIPipeline::PopulateCommandlist()
 {
-	return _commandList.Get();
+
 }
 
 void UIPipeline::CreatePipeline()

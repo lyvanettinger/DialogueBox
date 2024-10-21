@@ -30,6 +30,7 @@ int main()
 
 		g_app->Update();
 		g_sample->Update();
+		g_renderer->Update(deltaTime.count());
 		g_renderer->Render(deltaTime.count());
 	}
 }

@@ -9,7 +9,7 @@ public:
 	GeometryPipeline(Renderer& renderer, std::shared_ptr<Camera>& camera);
 	~GeometryPipeline();
 
-	ID3D12CommandList* PopulateCommandlist();
+	void PopulateCommandlist();
 
 	void Update(float deltaTime);
 private:
@@ -18,7 +18,6 @@ private:
 
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> _rootSignature;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> _pipelineState;
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _commandList;
 
 	// Temporarily just store these here. Usually these should be part of a model resource
 	Microsoft::WRL::ComPtr<ID3D12Resource> _vertexBuffer;
