@@ -49,6 +49,7 @@ private:
     bool _useWarpDevice;
 
     void InitializeGraphics();
+    void CreateDepthBuffer();
 
     // friend classes
     friend class GeometryPipeline;

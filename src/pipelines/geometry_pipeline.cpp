@@ -1,9 +1,10 @@
 #include "pch.hpp"
 
+#include "resource_util.hpp"
+#include "dx12_helpers.hpp"
+
 #include "pipelines/geometry_pipeline.hpp"
 
-#include "dx12_helpers.hpp"
-#include "resource_util.hpp"
 #include "command_queue.hpp"
 
 #include "renderer.hpp"
@@ -52,25 +53,26 @@ GeometryPipeline::~GeometryPipeline()
 
 }
 
-void GeometryPipeline::PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>& commandList)
+void GeometryPipeline::PopulateCommandlist(const Util::CommandResource& commandResource)
 {
     // Set necessary stuff.
-    commandList->SetPipelineState(_pipelineState.Get());
-    commandList->SetGraphicsRootSignature(_rootSignature.Get());
-    commandList->RSSetViewports(1, &_renderer._viewport);
-    commandList->RSSetScissorRects(1, &_renderer._scissorRect);
+    commandResource.commandList->SetPipelineState(_pipelineState.Get());
+    commandResource.commandList->SetGraphicsRootSignature(_rootSignature.Get());
+    commandResource.commandList->OMSetRenderTargets(1, &commandResource.rtvHandle, FALSE, &commandResource.dsvHandle);
+    commandResource.commandList->RSSetViewports(1, &_renderer._viewport);
+    commandResource.commandList->RSSetScissorRects(1, &_renderer._scissorRect);
 
     // Start recording.
-    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
-    commandList->IASetIndexBuffer(&_IndexBufferView);
+    commandResource.commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandResource.commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
+    commandResource.commandList->IASetIndexBuffer(&_IndexBufferView);
 
     // Update the MVP matrix
     XMMATRIX mvpMatrix = XMMatrixMultiply(_camera->model, _camera->view);
     mvpMatrix = XMMatrixMultiply(mvpMatrix, _camera->projection);
-    commandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
+    commandResource.commandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
 
-    commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
+    commandResource.commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
 }
 
 void GeometryPipeline::Update(float deltaTime)

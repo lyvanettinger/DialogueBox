@@ -12,4 +12,11 @@ namespace Util
 	void TransitionResource(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList, 
 		Microsoft::WRL::ComPtr<ID3D12Resource> resource, 
 		D3D12_RESOURCE_STATES beforeState, D3D12_RESOURCE_STATES afterState);
+
+	struct CommandResource
+	{
+		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList;
+		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle;
+		CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle;
+	};
 }
