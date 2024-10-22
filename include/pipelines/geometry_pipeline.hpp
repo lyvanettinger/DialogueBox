@@ -9,8 +9,7 @@ public:
 	GeometryPipeline(Renderer& renderer, std::shared_ptr<Camera>& camera);
 	~GeometryPipeline();
 
-	void PopulateCommandlist();
-
+	void PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>& commandList);
 	void Update(float deltaTime);
 private:
 	Renderer& _renderer;

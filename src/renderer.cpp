@@ -9,6 +9,7 @@
 #include "renderer.hpp"
 
 #include "dx12_helpers.hpp"
+#include "resource_util.hpp"
 #include "glfw_app.hpp"
 #include "command_queue.hpp"
 
@@ -36,7 +37,7 @@ Renderer::Renderer(std::shared_ptr<Application> app) :
     _geometryPipeline = std::make_unique<GeometryPipeline>(*this, _camera);
     _uiPipeline = std::make_unique<UIPipeline>(*this);
 
-    ResizeDepthBuffer();
+    Flush();
 }
 
 Renderer::~Renderer()
@@ -51,58 +52,34 @@ void Renderer::Update(float deltaTime)
     _geometryPipeline->Update(deltaTime);
 }
 
-void Renderer::Render(float deltaTime)
+void Renderer::Render()
 {
-    _geometryPipeline->PopulateCommandlist();
+    auto commandList = _directCommandQueue->GetCommandList();
+
+    // Clear targets.
+    Util::TransitionResource(commandList, _renderTargets[_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(_rtvHeap->GetCPUDescriptorHandleForHeapStart(), _frameIndex, _rtvDescriptorSize);
+    auto dsvHandle = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+    // Record command lists.
+    _geometryPipeline->PopulateCommandlist(commandList);
+
+    // Sync up resource(s) (might need this inbetween some stages later)
+    Util::TransitionResource(commandList, _renderTargets[_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+
+    // Execute commandlist.
+    uint64_t fenceValue = _directCommandQueue->ExecuteCommandList(commandList);
+    _fenceValues[_frameIndex] = fenceValue;
 
     // Present the frame.
     Util::ThrowIfFailed(_swapChain->Present(1, 0));
-}
 
-void Renderer::ResizeWindow(UINT width, UINT height)
-{
-    if (_width != width || _height != height)
-    {
-        _width = max(width, 1);
-        _height = max(height, 1);
-        _aspectRatio = static_cast<float>(_width) / static_cast<float>(_height);
-
-        _viewport = CD3DX12_VIEWPORT(0.0f, 0.0f, static_cast<FLOAT>(_width), static_cast<FLOAT>(_height));
-
-        ResizeDepthBuffer();
-    }
-}
-
-void Renderer::ResizeDepthBuffer()
-{
-    Flush();
-
-    // Create DSV
-    D3D12_CLEAR_VALUE optimizedClearValue = {};
-    optimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-    optimizedClearValue.DepthStencil = { 1.0f, 0 };
-
-    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-    CD3DX12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, _width, _height,
-        1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
-    Util::ThrowIfFailed(_device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &resourceDesc,
-        D3D12_RESOURCE_STATE_DEPTH_WRITE,
-        &optimizedClearValue,
-        IID_PPV_ARGS(&_depthBuffer)
-    ));
-
-    // Update the depth-stencil view.
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsv = {};
-    dsv.Format = DXGI_FORMAT_D32_FLOAT;
-    dsv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    dsv.Texture2D.MipSlice = 0;
-    dsv.Flags = D3D12_DSV_FLAG_NONE;
-
-    _device->CreateDepthStencilView(_depthBuffer.Get(), &dsv,
-        _dsvHeap->GetCPUDescriptorHandleForHeapStart());
+    // Wait for new back buffer to be done.
+    _frameIndex = _swapChain->GetCurrentBackBufferIndex();
+    _directCommandQueue->WaitForFenceValue(_fenceValues[_frameIndex]);
 }
 
 void Renderer::Flush()
@@ -233,4 +210,31 @@ void Renderer::InitializeGraphics()
 
         }
     }
+
+    // Create DSV
+    D3D12_CLEAR_VALUE optimizedClearValue = {};
+    optimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+    optimizedClearValue.DepthStencil = { 1.0f, 0 };
+
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+    CD3DX12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, _width, _height,
+        1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+    Util::ThrowIfFailed(_device->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &resourceDesc,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        &optimizedClearValue,
+        IID_PPV_ARGS(&_depthBuffer)
+    ));
+
+    // Update the depth-stencil view.
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsv = {};
+    dsv.Format = DXGI_FORMAT_D32_FLOAT;
+    dsv.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsv.Texture2D.MipSlice = 0;
+    dsv.Flags = D3D12_DSV_FLAG_NONE;
+
+    _device->CreateDepthStencilView(_depthBuffer.Get(), &dsv,
+        _dsvHeap->GetCPUDescriptorHandleForHeapStart());
 }

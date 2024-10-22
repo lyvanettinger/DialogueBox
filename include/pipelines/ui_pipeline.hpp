@@ -8,7 +8,8 @@ public:
 	UIPipeline(Renderer& renderer);
 	~UIPipeline();
 
-	void PopulateCommandlist();
+	void PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>& commandList);
+	void Update(float deltaTime);
 private:
 	Renderer& _renderer;
 

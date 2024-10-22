@@ -13,9 +13,7 @@ public:
 	~Renderer();
 
     void Update(float deltaTime);
-	void Render(float deltaTime);
-
-    void ResizeWindow(UINT width, UINT height);
+	void Render();
 
     void Flush();
 
@@ -46,11 +44,13 @@ private:
     UINT _rtvDescriptorSize;
 
     UINT _frameIndex;
+    uint64_t _fenceValues[FRAME_COUNT] = {};
+    const float clearColor[4] = { 255.0f / 255.0f, 182.0f / 255.0f, 193.0f / 255.0f, 1.0f }; // pink :)
     bool _useWarpDevice;
 
     void InitializeGraphics();
-    void ResizeDepthBuffer();
 
     // friend classes
     friend class GeometryPipeline;
+    friend class UIPipeline;
 };

@@ -52,41 +52,25 @@ GeometryPipeline::~GeometryPipeline()
 
 }
 
-void GeometryPipeline::PopulateCommandlist()
+void GeometryPipeline::PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>& commandList)
 {
-    auto commandList = _renderer._directCommandQueue->GetCommandList();
-
-    // Set necessary state.
+    // Set necessary stuff.
+    commandList->SetPipelineState(_pipelineState.Get());
     commandList->SetGraphicsRootSignature(_rootSignature.Get());
     commandList->RSSetViewports(1, &_renderer._viewport);
     commandList->RSSetScissorRects(1, &_renderer._scissorRect);
 
-    // Indicate that the back buffer will be used as a render target.
-    auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(_renderer._renderTargets[_renderer._frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    commandList->ResourceBarrier(1, &barrier);
-
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(_renderer._rtvHeap->GetCPUDescriptorHandleForHeapStart(), _renderer._frameIndex, _renderer._rtvDescriptorSize);
-    auto dsvHandle = _renderer._dsvHeap->GetCPUDescriptorHandleForHeapStart();
-    commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
-
-    // Clear RTV and DSV
-    // TODO: this should be moved to renderer
-    const float clearColor[] = { 255.0f / 255.0f, 182.0f / 255.0f, 193.0f / 255.0f, 1.0f }; // pink :)
-    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-
-    // Start recording
+    // Start recording.
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
     commandList->IASetIndexBuffer(&_IndexBufferView);
+
+    // Update the MVP matrix
+    XMMATRIX mvpMatrix = XMMatrixMultiply(_camera->model, _camera->view);
+    mvpMatrix = XMMatrixMultiply(mvpMatrix, _camera->projection);
+    commandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
+
     commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
-
-    // Indicate that the back buffer will now be used to present.
-    barrier = CD3DX12_RESOURCE_BARRIER::Transition(_renderer._renderTargets[_renderer._frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-    commandList->ResourceBarrier(1, &barrier);
-
-    uint64_t fenceValue = _renderer._directCommandQueue->ExecuteCommandList(commandList);
-    _renderer._directCommandQueue->WaitForFenceValue(fenceValue);
 }
 
 void GeometryPipeline::Update(float deltaTime)
