@@ -18,9 +18,8 @@ int main()
 	g_renderer = std::make_shared<Renderer>(g_app);
 	g_sample = std::make_unique<DialogueSample>(g_renderer);
 
-	
-	std::chrono::duration<float, std::milli> deltaTime(0);
-	auto previousFrameTime = std::chrono::high_resolution_clock::now();
+	std::chrono::high_resolution_clock::duration deltaTime(0);
+	std::chrono::high_resolution_clock::time_point previousFrameTime = std::chrono::high_resolution_clock::now();
 
 	while (!g_app->ShouldClose())
 	{
@@ -30,7 +29,7 @@ int main()
 
 		g_app->Update();
 		g_sample->Update();
-		g_renderer->Update(deltaTime.count());
+		g_renderer->Update(deltaTime.count() * 1e-9);
 		g_renderer->Render();
 	}
 }

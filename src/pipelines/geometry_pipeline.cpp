@@ -79,7 +79,7 @@ void GeometryPipeline::Update(float deltaTime)
 {
     static double totalTime = 0.0f;
     totalTime += deltaTime;
-    if (totalTime > 1.0f)
+    if (totalTime > 4.0f)
     {
         totalTime = 0.0f;
     }
