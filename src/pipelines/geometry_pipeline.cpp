@@ -13,18 +13,17 @@
 struct Vertex
 {
     DirectX::XMFLOAT3 position;
-    DirectX::XMFLOAT4 color;
 };
 
 static Vertex cubeVertices[8] = {
-    { { -1.0f, -1.0f, -1.0f }, { 0.0f, 0.0f, 0.0f, 1.0f } }, // 0
-    { { -1.0f,  1.0f, -1.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } }, // 1
-    { { 1.0f,  1.0f, -1.0f }, { 1.0f, 1.0f, 0.0f, 1.0f } }, // 2
-    { { 1.0f, -1.0f, -1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } }, // 3
-    { { -1.0f, -1.0f,  1.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }, // 4
-    { { -1.0f,  1.0f,  1.0f }, { 0.0f, 1.0f, 1.0f, 1.0f } }, // 5
-    { { 1.0f,  1.0f,  1.0f }, { 1.0f, 1.0f, 1.0f, 1.0f } }, // 6
-    { { 1.0f, -1.0f,  1.0f }, { 1.0f, 0.0f, 1.0f, 1.0f } }  // 7
+    { { -1.0f, -1.0f, -1.0f } },
+    { { -1.0f,  1.0f, -1.0f } },
+    { { 1.0f,  1.0f, -1.0f } },
+    { { 1.0f, -1.0f, -1.0f } },
+    { { -1.0f, -1.0f,  1.0f } },
+    { { -1.0f,  1.0f,  1.0f } },
+    { { 1.0f,  1.0f,  1.0f } },
+    { { 1.0f, -1.0f,  1.0f } }
 };
 
 static WORD cubeIndices[36] =
@@ -139,8 +138,8 @@ void GeometryPipeline::CreatePipeline()
     // Define the vertex input layout.
     D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD",   0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     // Describe and create the graphics pipeline state object (PSO).

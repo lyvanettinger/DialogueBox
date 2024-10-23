@@ -1,9 +1,12 @@
 struct PSInput
 {
-    float4 color : COLOR;
+    float2 uv : TEXCOORD;
 };
+
+Texture2D AlbedoTexture : register(t0);
+SamplerState AlbedoSampler : register(s0);
 
 float4 main(PSInput input) : SV_TARGET
 {
-    return input.color;
+    return AlbedoTexture.Sample(AlbedoSampler, input.uv);
 }
