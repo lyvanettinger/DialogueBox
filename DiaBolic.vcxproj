@@ -31,6 +31,7 @@
     <ClCompile Include="src\resource_util.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="external\stb_image\stb_image.h" />
     <ClInclude Include="include\camera.hpp" />
     <ClInclude Include="include\command_queue.hpp" />
     <ClInclude Include="include\d3dx12.h" />
