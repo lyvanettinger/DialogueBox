@@ -6,34 +6,26 @@
 #include "pipelines/geometry_pipeline.hpp"
 
 #include "command_queue.hpp"
-
 #include "renderer.hpp"
 #include "camera.hpp"
 
 struct Vertex
 {
     DirectX::XMFLOAT3 position;
+    DirectX::XMFLOAT2 uv;
 };
 
-static Vertex cubeVertices[8] = {
-    { { -1.0f, -1.0f, -1.0f } },
-    { { -1.0f,  1.0f, -1.0f } },
-    { { 1.0f,  1.0f, -1.0f } },
-    { { 1.0f, -1.0f, -1.0f } },
-    { { -1.0f, -1.0f,  1.0f } },
-    { { -1.0f,  1.0f,  1.0f } },
-    { { 1.0f,  1.0f,  1.0f } },
-    { { 1.0f, -1.0f,  1.0f } }
+static Vertex cubeVertices[4] = {
+    // positions              // texture coords
+    { { 0.5f,  0.5f, 0.0f },  { 1.0f, 1.0f } }, // top right
+    { { 0.5f, -0.5f, 0.0f },  { 1.0f, 0.0f } }, // bottom right
+    { { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f } }, // bottom left
+    { { -0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f } }  // top left 
 };
 
-static WORD cubeIndices[36] =
-{
-    0, 1, 2, 0, 2, 3,
-    4, 6, 5, 4, 7, 6,
-    4, 5, 1, 4, 1, 0,
-    3, 2, 6, 3, 6, 7,
-    1, 5, 6, 1, 6, 2,
-    4, 0, 3, 4, 3, 7
+static WORD cubeIndices[6] = {
+    0, 1, 3, // first triangle
+    1, 2, 3  // second triangle
 };
 
 using namespace Util;
@@ -52,26 +44,24 @@ GeometryPipeline::~GeometryPipeline()
 
 }
 
-void GeometryPipeline::PopulateCommandlist(const Util::CommandResource& commandResource)
+void GeometryPipeline::PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>& commandList)
 {
     // Set necessary stuff.
-    commandResource.commandList->SetPipelineState(_pipelineState.Get());
-    commandResource.commandList->SetGraphicsRootSignature(_rootSignature.Get());
-    commandResource.commandList->OMSetRenderTargets(1, &commandResource.rtvHandle, FALSE, &commandResource.dsvHandle);
-    commandResource.commandList->RSSetViewports(1, &_renderer._viewport);
-    commandResource.commandList->RSSetScissorRects(1, &_renderer._scissorRect);
+    commandList->SetPipelineState(_pipelineState.Get());
+    commandList->SetGraphicsRootSignature(_rootSignature.Get());
 
     // Start recording.
-    commandResource.commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandResource.commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
-    commandResource.commandList->IASetIndexBuffer(&_IndexBufferView);
+    commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
+    commandList->IASetIndexBuffer(&_indexBufferView);
+    commandList->SetGraphicsRootShaderResourceView(1, _albedoTexture.Get()->GetGPUVirtualAddress());
 
     // Update the MVP matrix
     XMMATRIX mvpMatrix = XMMatrixMultiply(_camera->model, _camera->view);
     mvpMatrix = XMMatrixMultiply(mvpMatrix, _camera->projection);
-    commandResource.commandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
+    commandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
 
-    commandResource.commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
+    commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
 }
 
 void GeometryPipeline::Update(float deltaTime)
@@ -108,12 +98,16 @@ void GeometryPipeline::CreatePipeline()
         D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
 
-    // A single 32-bit constant root parameter that is used by the vertex shader.
-    CD3DX12_ROOT_PARAMETER rootParameters[1];
+    CD3DX12_DESCRIPTOR_RANGE descriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+    CD3DX12_ROOT_PARAMETER rootParameters[2];
     rootParameters[0].InitAsConstants(sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
+    rootParameters[1].InitAsDescriptorTable(1, &descriptorRange, D3D12_SHADER_VISIBILITY_PIXEL);
+
+    CD3DX12_STATIC_SAMPLER_DESC albedoSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
 
     CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-    rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 0, nullptr, rootSignatureFlags);
+    rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 0, &albedoSampler, rootSignatureFlags);
 
     ComPtr<ID3DBlob> signature;
     ComPtr<ID3DBlob> error;
@@ -192,10 +186,14 @@ void GeometryPipeline::InitializeAssets()
         &_IndexBuffer, &intermediateIndexBuffer,
         _countof(cubeIndices), sizeof(WORD), cubeIndices);
 
-    _IndexBufferView.BufferLocation = _IndexBuffer->GetGPUVirtualAddress();
-    _IndexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    _IndexBufferView.SizeInBytes = sizeof(cubeIndices);
+    _indexBufferView.BufferLocation = _IndexBuffer->GetGPUVirtualAddress();
+    _indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    _indexBufferView.SizeInBytes = sizeof(cubeIndices);
 
+    // Create the texture.
+    LoadTextureFromFile(_renderer._device, &_albedoTexture, "assets/textures/Utila.jpeg");
+
+    // Execute list
     uint64_t fenceValue = _renderer._copyCommandQueue->ExecuteCommandList(commandList);
     _renderer._copyCommandQueue->WaitForFenceValue(fenceValue);
 }

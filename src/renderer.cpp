@@ -12,7 +12,6 @@
 #include "resource_util.hpp"
 #include "glfw_app.hpp"
 #include "command_queue.hpp"
-
 #include "camera.hpp"
 
 #include "pipelines/geometry_pipeline.hpp"
@@ -54,24 +53,26 @@ void Renderer::Update(float deltaTime)
 
 void Renderer::Render()
 {
-    Util::CommandResource commandResource{};
-    commandResource.commandList = _directCommandQueue->GetCommandList();
-    commandResource.rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(_rtvHeap->GetCPUDescriptorHandleForHeapStart(), _frameIndex, _rtvDescriptorSize);;
-    commandResource.dsvHandle = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    auto commandList = _directCommandQueue->GetCommandList();
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(_rtvHeap->GetCPUDescriptorHandleForHeapStart(), _frameIndex, _rtvDescriptorSize);;
+    auto dsvHandle = _dsvHeap->GetCPUDescriptorHandleForHeapStart();
     
     // Clear targets.
-    Util::TransitionResource(commandResource.commandList, _renderTargets[_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-    commandResource.commandList->ClearRenderTargetView(commandResource.rtvHandle, clearColor, 0, nullptr);
-    commandResource.commandList->ClearDepthStencilView(commandResource.dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    Util::TransitionResource(commandList, _renderTargets[_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     // Record command lists.
-    _geometryPipeline->PopulateCommandlist(commandResource);
+    commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+    commandList->RSSetViewports(1, &_viewport);
+    commandList->RSSetScissorRects(1, &_scissorRect);
+    _geometryPipeline->PopulateCommandlist(commandList);
 
     // Sync up resource(s) (might need this inbetween some stages later)
-    Util::TransitionResource(commandResource.commandList, _renderTargets[_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+    Util::TransitionResource(commandList, _renderTargets[_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 
     // Execute commandlist.
-    uint64_t fenceValue = _directCommandQueue->ExecuteCommandList(commandResource.commandList);
+    uint64_t fenceValue = _directCommandQueue->ExecuteCommandList(commandList);
     _fenceValues[_frameIndex] = fenceValue;
 
     // Present the frame.

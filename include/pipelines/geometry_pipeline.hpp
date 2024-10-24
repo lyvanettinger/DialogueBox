@@ -9,7 +9,7 @@ public:
 	GeometryPipeline(Renderer& renderer, std::shared_ptr<Camera>& camera);
 	~GeometryPipeline();
 
-	void PopulateCommandlist(const Util::CommandResource& commandResource);
+	void PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2>& commandList);
 	void Update(float deltaTime);
 private:
 	Renderer& _renderer;
@@ -22,7 +22,9 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12Resource> _vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW _vertexBufferView;
 	Microsoft::WRL::ComPtr<ID3D12Resource> _IndexBuffer;
-	D3D12_INDEX_BUFFER_VIEW _IndexBufferView;
+	D3D12_INDEX_BUFFER_VIEW _indexBufferView;
+	Microsoft::WRL::ComPtr<ID3D12Resource> _albedoTexture;
+	D3D12_SHADER_RESOURCE_VIEW_DESC _albedoTextureView;
 
 	void CreatePipeline();
 	void InitializeAssets();
