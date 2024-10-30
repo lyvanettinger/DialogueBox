@@ -3,10 +3,12 @@
 
 #include "dx12_helpers.hpp"
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image/stb_image.h"
+#ifndef _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#endif
+#include <experimental/filesystem>
 
-// #include <DirectXTex.h> // can add later to load DDS textures
+namespace fs = std::experimental::filesystem;
 
 void Util::LoadBufferResource(
     Microsoft::WRL::ComPtr<ID3D12Device> device,
@@ -56,58 +58,115 @@ void Util::LoadBufferResource(
 
 void Util::LoadTextureFromFile(
     Microsoft::WRL::ComPtr<ID3D12Device> device,
-    ID3D12Resource** pDestinationResource, const std::string& filePath,
-    DXGI_FORMAT format, Util::TextureDimension dimension)
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList,
+    ID3D12Resource** pDestinationResource, ID3D12Resource** pIntermediateResource,
+    const std::wstring& fileName)
 {
-    int width, height, nrChannels;
-    stbi_set_flip_vertically_on_load(true);
-    float* data = stbi_loadf(filePath.c_str(), &width, &height, &nrChannels, 0);
-    if (data)
+    fs::path filePath(fileName);
+    if (!fs::exists(filePath))
     {
-        CD3DX12_RESOURCE_DESC textureDesc = {};
-        switch (dimension)
-        {
-        case Util::TextureDimension::eTEX1D:
-            // not yet implemented
-            assert(false);
-            //textureDesc = CD3DX12_RESOURCE_DESC::Tex1D(format, width);
-            break;
-        case Util::TextureDimension::eTEX2D:
-            textureDesc = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height);
-            break;
-        case Util::TextureDimension::eTEX3D:
-            // not yet implemented
-            assert(false);
-            //textureDesc = CD3DX12_RESOURCE_DESC::Tex3D(format, width, height)
-            break;
-        default:
-            assert(false);
-        }
+        throw std::exception("File not found.");
+    }
 
-        CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-        ThrowIfFailed(device->CreateCommittedResource(
-            &heapProps,
-            D3D12_HEAP_FLAG_NONE,
-            &textureDesc,
-            D3D12_RESOURCE_STATE_COMMON,
-            nullptr,
-            IID_PPV_ARGS(pDestinationResource)));
+    DirectX::TexMetadata metadata;
+    DirectX::ScratchImage scratchImage;
 
-        D3D12_CPU_DESCRIPTOR_HANDLE cbvSrvHandle = {}; // TODO: pass this back??
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = format;
-        srvDesc.Texture2D.MipLevels = 1;
-        srvDesc.Texture2D.MostDetailedMip = 0;
-        srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-        device->CreateShaderResourceView(*pDestinationResource, &srvDesc, cbvSrvHandle);
+    if (filePath.extension() == ".dds")
+    {
+        ThrowIfFailed(LoadFromDDSFile(
+            fileName.c_str(),
+            DirectX::DDS_FLAGS_NONE,
+            &metadata,
+            scratchImage));
+    }
+    else if (filePath.extension() == ".hdr")
+    {
+        ThrowIfFailed(LoadFromHDRFile(
+            fileName.c_str(),
+            &metadata,
+            scratchImage));
+    }
+    else if (filePath.extension() == ".tga")
+    {
+        ThrowIfFailed(LoadFromTGAFile(
+            fileName.c_str(),
+            &metadata,
+            scratchImage));
     }
     else
     {
-        assert(false);
+        ThrowIfFailed(LoadFromWICFile(
+            fileName.c_str(),
+            DirectX::WIC_FLAGS_NONE,
+            &metadata,
+            scratchImage));
     }
-    stbi_image_free(data);
+
+    D3D12_RESOURCE_DESC textureDesc = {};
+    switch (metadata.dimension)
+    {
+    case DirectX::TEX_DIMENSION_TEXTURE1D:
+        textureDesc = CD3DX12_RESOURCE_DESC::Tex1D(
+            metadata.format,
+            static_cast<UINT64>(metadata.width),
+            static_cast<UINT16>(metadata.arraySize));
+        break;
+    case DirectX::TEX_DIMENSION_TEXTURE2D:
+        textureDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+            metadata.format,
+            static_cast<UINT64>(metadata.width),
+            static_cast<UINT>(metadata.height),
+            static_cast<UINT16>(metadata.arraySize));
+        break;
+    case DirectX::TEX_DIMENSION_TEXTURE3D:
+        textureDesc = CD3DX12_RESOURCE_DESC::Tex3D(
+            metadata.format,
+            static_cast<UINT64>(metadata.width),
+            static_cast<UINT>(metadata.height),
+            static_cast<UINT16>(metadata.depth));
+        break;
+    default:
+        throw std::exception("Invalid texture dimension.");
+        break;
+    }
+    
+    CD3DX12_HEAP_PROPERTIES textureHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    ThrowIfFailed(device->CreateCommittedResource(
+        &textureHeapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &textureDesc,
+        D3D12_RESOURCE_STATE_COMMON,
+        nullptr,
+        IID_PPV_ARGS(pDestinationResource)));
+
+    std::vector<D3D12_SUBRESOURCE_DATA> subresources(scratchImage.GetImageCount());
+    const DirectX::Image* pImages = scratchImage.GetImages();
+    for (int i = 0; i < scratchImage.GetImageCount(); ++i)
+    {
+        auto& subresource = subresources[i];
+        subresource.RowPitch = pImages[i].rowPitch;
+        subresource.SlicePitch = pImages[i].slicePitch;
+        subresource.pData = pImages[i].pixels;
+    }
+
+    if (pDestinationResource)
+    {
+        TransitionResource(commandList, *pDestinationResource, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+
+        UINT64 requiredSize = GetRequiredIntermediateSize(*pDestinationResource, 0, static_cast<uint32_t>(subresources.size()));
+
+        D3D12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(requiredSize);
+        CD3DX12_HEAP_PROPERTIES bufferHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        ThrowIfFailed(device->CreateCommittedResource(
+            &bufferHeapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &bufferDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            nullptr,
+            IID_PPV_ARGS(pIntermediateResource)
+        ));
+        UpdateSubresources(commandList.Get(), *pDestinationResource, *pIntermediateResource, 0, 0, static_cast<UINT>(subresources.size()), subresources.data());
+    }
 }
 
 void Util::TransitionResource(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList,

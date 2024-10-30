@@ -54,7 +54,7 @@ void GeometryPipeline::PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12Gr
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
     commandList->IASetIndexBuffer(&_indexBufferView);
-    commandList->SetGraphicsRootShaderResourceView(1, _albedoTexture.Get()->GetGPUVirtualAddress());
+    commandList->SetGraphicsRootDescriptorTable(1, _renderer._srvHeap->GetGPUDescriptorHandleForHeapStart());
 
     // Update the MVP matrix
     XMMATRIX mvpMatrix = XMMatrixMultiply(_camera->model, _camera->view);
@@ -95,19 +95,20 @@ void GeometryPipeline::CreatePipeline()
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
-    CD3DX12_DESCRIPTOR_RANGE descriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    CD3DX12_DESCRIPTOR_RANGE textureDescriptorRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DESCRIPTORS_VOLATILE);
 
     CD3DX12_ROOT_PARAMETER rootParameters[2];
     rootParameters[0].InitAsConstants(sizeof(DirectX::XMMATRIX) / 4, 0, 0, D3D12_SHADER_VISIBILITY_VERTEX);
-    rootParameters[1].InitAsDescriptorTable(1, &descriptorRange, D3D12_SHADER_VISIBILITY_PIXEL);
+    rootParameters[1].InitAsDescriptorTable(1, &textureDescriptorRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
-    CD3DX12_STATIC_SAMPLER_DESC albedoSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
+    CD3DX12_STATIC_SAMPLER_DESC albedoSampler;
+    albedoSampler.Init(0);
+    albedoSampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
     CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-    rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 0, &albedoSampler, rootSignatureFlags);
+    rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 1, &albedoSampler, rootSignatureFlags);
 
     ComPtr<ID3DBlob> signature;
     ComPtr<ID3DBlob> error;
@@ -191,7 +192,17 @@ void GeometryPipeline::InitializeAssets()
     _indexBufferView.SizeInBytes = sizeof(cubeIndices);
 
     // Create the texture.
-    LoadTextureFromFile(_renderer._device, &_albedoTexture, "assets/textures/Utila.jpeg");
+    ComPtr<ID3D12Resource> intermediateAlbedoBuffer;
+    _albedoTextureHandle = _renderer._srvHeap->GetCPUDescriptorHandleForHeapStart();
+    LoadTextureFromFile(_renderer._device, commandList,
+        &_albedoTexture, &intermediateAlbedoBuffer,
+        L"Utila.jpeg");
+    _albedoTextureView.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    _albedoTextureView.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    _albedoTextureView.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    _albedoTextureView.Texture2D.MipLevels = 1;
+    _renderer._device->CreateShaderResourceView(_albedoTexture.Get(), &_albedoTextureView, _albedoTextureHandle);
+    _renderer._device->CopyDescriptorsSimple(1, _renderer._srvHeap->GetCPUDescriptorHandleForHeapStart(), _albedoTextureHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // Execute list
     uint64_t fenceValue = _renderer._copyCommandQueue->ExecuteCommandList(commandList);

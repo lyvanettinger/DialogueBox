@@ -41,7 +41,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> _depthBuffer;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _rtvHeap;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _dsvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> _srvHeap;
     UINT _rtvDescriptorSize;
+    UINT _srvDescriptorSize;
 
     UINT _frameIndex;
     uint64_t _fenceValues[FRAME_COUNT] = {};

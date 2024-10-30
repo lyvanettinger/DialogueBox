@@ -8,6 +8,7 @@
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
+#include <DirectXTex/DirectXTex/DirectXTex.h>
 
 #pragma warning(push)
 #pragma warning(disable : 4324)
@@ -23,9 +24,9 @@
 #include <string>
 #include <memory>
 #include <queue>
-
 #include <stdlib.h>
 #include <stdio.h>
 
 // program specific
 #define FRAME_COUNT 2
+#define MAX_CBV_SRV_UAV_COUNT 256

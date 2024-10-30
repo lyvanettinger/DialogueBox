@@ -25,6 +25,7 @@ private:
 	D3D12_INDEX_BUFFER_VIEW _indexBufferView;
 	Microsoft::WRL::ComPtr<ID3D12Resource> _albedoTexture;
 	D3D12_SHADER_RESOURCE_VIEW_DESC _albedoTextureView;
+	D3D12_CPU_DESCRIPTOR_HANDLE _albedoTextureHandle;
 
 	void CreatePipeline();
 	void InitializeAssets();
