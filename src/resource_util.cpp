@@ -10,6 +10,52 @@
 
 namespace fs = std::experimental::filesystem;
 
+void Util::CreateCube(
+    std::vector<Vertex>& vertices,
+    std::vector<uint16_t>& indices,
+    float size)
+{
+    // Cube is centered at 0,0,0.
+    float s = size * 0.5f;
+
+    // 8 edges of cube.
+    DirectX::XMFLOAT3 p[8] = { { s, s, -s }, { s, s, s },   { s, -s, s },   { s, -s, -s },
+                      { -s, s, s }, { -s, s, -s }, { -s, -s, -s }, { -s, -s, s } };
+    // 6 face normals
+    DirectX::XMFLOAT3 n[6] = { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 }, { 0, 0, -1 } };
+    // 4 unique texture coordinates
+    DirectX::XMFLOAT2 t[4] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
+
+    // Indices for the vertex positions.
+    uint16_t i[24] = {
+        0, 1, 2, 3,  // +X
+        4, 5, 6, 7,  // -X
+        4, 1, 0, 5,  // +Y
+        2, 7, 6, 3,  // -Y
+        1, 4, 7, 2,  // +Z
+        5, 0, 3, 6   // -Z
+    };
+
+    for (uint16_t f = 0; f < 6; ++f)  // For each face of the cube.
+    {
+        // Four vertices per face.
+        vertices.emplace_back(p[i[f * 4 + 0]], n[f], t[0]);
+        vertices.emplace_back(p[i[f * 4 + 1]], n[f], t[1]);
+        vertices.emplace_back(p[i[f * 4 + 2]], n[f], t[2]);
+        vertices.emplace_back(p[i[f * 4 + 3]], n[f], t[3]);
+
+        // First triangle.
+        indices.emplace_back(f * 4 + 0);
+        indices.emplace_back(f * 4 + 1);
+        indices.emplace_back(f * 4 + 2);
+
+        // Second triangle
+        indices.emplace_back(f * 4 + 2);
+        indices.emplace_back(f * 4 + 3);
+        indices.emplace_back(f * 4 + 0);
+    }
+}
+
 void Util::LoadBufferResource(
     Microsoft::WRL::ComPtr<ID3D12Device> device,
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList2> commandList,
@@ -68,12 +114,12 @@ void Util::LoadTextureFromFile(
         throw std::exception("File not found.");
     }
 
-    DirectX::TexMetadata metadata;
-    DirectX::ScratchImage scratchImage;
+    /*DirectX::TexMetadata metadata;
+    DirectX::ScratchImage scratchImage;*/
 
-    if (filePath.extension() == ".dds")
+    /*if (filePath.extension() == ".dds")
     {
-        ThrowIfFailed(LoadFromDDSFile(
+        ThrowIfFailed(DirectX::LoadFromDDSFile(
             fileName.c_str(),
             DirectX::DDS_FLAGS_NONE,
             &metadata,
@@ -81,29 +127,29 @@ void Util::LoadTextureFromFile(
     }
     else if (filePath.extension() == ".hdr")
     {
-        ThrowIfFailed(LoadFromHDRFile(
+        ThrowIfFailed(DirectX::LoadFromHDRFile(
             fileName.c_str(),
             &metadata,
             scratchImage));
     }
     else if (filePath.extension() == ".tga")
     {
-        ThrowIfFailed(LoadFromTGAFile(
+        ThrowIfFailed(DirectX::LoadFromTGAFile(
             fileName.c_str(),
             &metadata,
             scratchImage));
     }
     else
     {
-        ThrowIfFailed(LoadFromWICFile(
+        ThrowIfFailed(DirectX::LoadFromWICFile(
             fileName.c_str(),
             DirectX::WIC_FLAGS_NONE,
             &metadata,
             scratchImage));
-    }
+    }*/
 
     D3D12_RESOURCE_DESC textureDesc = {};
-    switch (metadata.dimension)
+    /*switch (metadata.dimension)
     {
     case DirectX::TEX_DIMENSION_TEXTURE1D:
         textureDesc = CD3DX12_RESOURCE_DESC::Tex1D(
@@ -128,7 +174,7 @@ void Util::LoadTextureFromFile(
     default:
         throw std::exception("Invalid texture dimension.");
         break;
-    }
+    }*/
     
     CD3DX12_HEAP_PROPERTIES textureHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
     ThrowIfFailed(device->CreateCommittedResource(
@@ -139,7 +185,7 @@ void Util::LoadTextureFromFile(
         nullptr,
         IID_PPV_ARGS(pDestinationResource)));
 
-    std::vector<D3D12_SUBRESOURCE_DATA> subresources(scratchImage.GetImageCount());
+    /*std::vector<D3D12_SUBRESOURCE_DATA> subresources(scratchImage.GetImageCount());
     const DirectX::Image* pImages = scratchImage.GetImages();
     for (int i = 0; i < scratchImage.GetImageCount(); ++i)
     {
@@ -147,13 +193,13 @@ void Util::LoadTextureFromFile(
         subresource.RowPitch = pImages[i].rowPitch;
         subresource.SlicePitch = pImages[i].slicePitch;
         subresource.pData = pImages[i].pixels;
-    }
+    }*/
 
     if (pDestinationResource)
     {
         TransitionResource(commandList, *pDestinationResource, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
 
-        UINT64 requiredSize = GetRequiredIntermediateSize(*pDestinationResource, 0, static_cast<uint32_t>(subresources.size()));
+        /*UINT64 requiredSize = GetRequiredIntermediateSize(*pDestinationResource, 0, static_cast<uint32_t>(subresources.size()));
 
         D3D12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(requiredSize);
         CD3DX12_HEAP_PROPERTIES bufferHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -164,8 +210,8 @@ void Util::LoadTextureFromFile(
             D3D12_RESOURCE_STATE_GENERIC_READ,
             nullptr,
             IID_PPV_ARGS(pIntermediateResource)
-        ));
-        UpdateSubresources(commandList.Get(), *pDestinationResource, *pIntermediateResource, 0, 0, static_cast<UINT>(subresources.size()), subresources.data());
+        ));*/
+        //UpdateSubresources(commandList.Get(), *pDestinationResource, *pIntermediateResource, 0, 0, static_cast<UINT>(subresources.size()), subresources.data());
     }
 }
 

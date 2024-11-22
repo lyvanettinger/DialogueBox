@@ -23,6 +23,7 @@ private:
 	D3D12_VERTEX_BUFFER_VIEW _vertexBufferView;
 	Microsoft::WRL::ComPtr<ID3D12Resource> _IndexBuffer;
 	D3D12_INDEX_BUFFER_VIEW _indexBufferView;
+	int _indexCount;
 	Microsoft::WRL::ComPtr<ID3D12Resource> _albedoTexture;
 	D3D12_SHADER_RESOURCE_VIEW_DESC _albedoTextureView;
 	D3D12_CPU_DESCRIPTOR_HANDLE _albedoTextureHandle;

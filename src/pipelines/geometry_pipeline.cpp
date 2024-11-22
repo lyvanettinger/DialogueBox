@@ -9,25 +9,6 @@
 #include "renderer.hpp"
 #include "camera.hpp"
 
-struct Vertex
-{
-    DirectX::XMFLOAT3 position;
-    DirectX::XMFLOAT2 uv;
-};
-
-static Vertex cubeVertices[4] = {
-    // positions              // texture coords
-    { { 0.5f,  0.5f, 0.0f },  { 1.0f, 1.0f } }, // top right
-    { { 0.5f, -0.5f, 0.0f },  { 1.0f, 0.0f } }, // bottom right
-    { { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f } }, // bottom left
-    { { -0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f } }  // top left 
-};
-
-static WORD cubeIndices[6] = {
-    0, 1, 3, // first triangle
-    1, 2, 3  // second triangle
-};
-
 using namespace Util;
 using namespace Microsoft::WRL;
 
@@ -54,14 +35,14 @@ void GeometryPipeline::PopulateCommandlist(const Microsoft::WRL::ComPtr<ID3D12Gr
     commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->IASetVertexBuffers(0, 1, &_vertexBufferView);
     commandList->IASetIndexBuffer(&_indexBufferView);
-    commandList->SetGraphicsRootDescriptorTable(1, _renderer._srvHeap->GetGPUDescriptorHandleForHeapStart());
+    //commandList->SetGraphicsRootDescriptorTable(1, _renderer._srvHeap->GetGPUDescriptorHandleForHeapStart());
 
     // Update the MVP matrix
     XMMATRIX mvpMatrix = XMMatrixMultiply(_camera->model, _camera->view);
     mvpMatrix = XMMatrixMultiply(mvpMatrix, _camera->projection);
     commandList->SetGraphicsRoot32BitConstants(0, sizeof(XMMATRIX) / 4, &mvpMatrix, 0);
 
-    commandList->DrawIndexedInstanced(_countof(cubeIndices), 1, 0, 0, 0);
+    commandList->DrawIndexedInstanced(_indexCount, 1, 0, 0, 0);
 }
 
 void GeometryPipeline::Update(float deltaTime)
@@ -134,7 +115,8 @@ void GeometryPipeline::CreatePipeline()
     D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "TEXCOORD",   0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, D3D12_APPEND_ALIGNED_ELEMENT, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
 
     // Describe and create the graphics pipeline state object (PSO).
@@ -170,39 +152,44 @@ void GeometryPipeline::CreatePipeline()
 void GeometryPipeline::InitializeAssets()
 {
     auto commandList = _renderer._copyCommandQueue->GetCommandList();
+
+    std::vector<Vertex> cubeVertices;
+    std::vector<uint16_t> cubeIndices;
+    CreateCube(cubeVertices, cubeIndices, 1.0f);
     
     // Create the vertex buffer.
     ComPtr<ID3D12Resource> intermediateVertexBuffer;
     LoadBufferResource(_renderer._device, commandList,
         &_vertexBuffer, &intermediateVertexBuffer,
-        _countof(cubeVertices), sizeof(Vertex), cubeVertices);
+        cubeVertices.size(), sizeof(Vertex), cubeVertices.data());
 
     _vertexBufferView.BufferLocation = _vertexBuffer->GetGPUVirtualAddress();
     _vertexBufferView.StrideInBytes = sizeof(Vertex);
-    _vertexBufferView.SizeInBytes = sizeof(cubeVertices);
+    _vertexBufferView.SizeInBytes = sizeof(Vertex) * cubeVertices.size();
 
     // Create the index buffer.
     ComPtr<ID3D12Resource> intermediateIndexBuffer;
     LoadBufferResource(_renderer._device, commandList,
         &_IndexBuffer, &intermediateIndexBuffer,
-        _countof(cubeIndices), sizeof(WORD), cubeIndices);
+        cubeIndices.size(), sizeof(uint16_t), cubeIndices.data());
+    _indexCount = static_cast<int>(cubeIndices.size());
 
     _indexBufferView.BufferLocation = _IndexBuffer->GetGPUVirtualAddress();
     _indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    _indexBufferView.SizeInBytes = sizeof(cubeIndices);
+    _indexBufferView.SizeInBytes = _indexCount * sizeof(uint16_t);
 
     // Create the texture.
     ComPtr<ID3D12Resource> intermediateAlbedoBuffer;
     _albedoTextureHandle = _renderer._srvHeap->GetCPUDescriptorHandleForHeapStart();
-    LoadTextureFromFile(_renderer._device, commandList,
+    /*LoadTextureFromFile(_renderer._device, commandList,
         &_albedoTexture, &intermediateAlbedoBuffer,
-        L"Utila.jpeg");
+        L"Utila.jpeg");*/
     _albedoTextureView.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
     _albedoTextureView.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     _albedoTextureView.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     _albedoTextureView.Texture2D.MipLevels = 1;
-    _renderer._device->CreateShaderResourceView(_albedoTexture.Get(), &_albedoTextureView, _albedoTextureHandle);
-    _renderer._device->CopyDescriptorsSimple(1, _renderer._srvHeap->GetCPUDescriptorHandleForHeapStart(), _albedoTextureHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    //_renderer._device->CreateShaderResourceView(_albedoTexture.Get(), &_albedoTextureView, _albedoTextureHandle);
+    //_renderer._device->CopyDescriptorsSimple(1, _renderer._srvHeap->GetCPUDescriptorHandleForHeapStart(), _albedoTextureHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // Execute list
     uint64_t fenceValue = _renderer._copyCommandQueue->ExecuteCommandList(commandList);

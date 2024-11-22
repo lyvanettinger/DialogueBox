@@ -8,7 +8,7 @@
 #include <dxgi1_6.h>
 #include <d3dcompiler.h>
 #include <DirectXMath.h>
-#include <DirectXTex/DirectXTex/DirectXTex.h>
+#include <DirectXTex/DirectXTex.h>
 
 #pragma warning(push)
 #pragma warning(disable : 4324)
@@ -17,8 +17,8 @@
 
 // GLFW
 #define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
+#include <glfw3.h>
+#include <glfw3native.h>
 
 // commonly used
 #include <string>
